@@ -1,6 +1,8 @@
 const { S3 } = require("aws-sdk");                                       // v2
 const { S3Client, PutObjectCommand } = require("@aws-sdk/client-s3");   // v3
 const asyncHandler = require("express-async-handler");
+const { randomUUID } = require('crypto');
+const sharp = require('sharp');
 
 exports.uploadV2 = asyncHandler(async (req, res, next) => {
   const s3 = new S3();
@@ -44,5 +46,36 @@ exports.uploadV3 = asyncHandler(async (req, res, next) => {
   } catch (error) {
     next(error);
   }
+});
+
+
+exports.upload = asyncHandler(async (req, res, next) => {
+  const { foldername } = req.headers;
+
+  if (!req.file) return next(new Error('file missing'));
+  if (!foldername) return next(new Error('foldername missing in headers'));
+
+  const { buffer, mimetype } = req.file;
+  let resized = buffer;
+  if (mimetype.includes('image')) {
+    resized = await sharp(buffer)
+      .jpeg({ quality: 30, progressive: true, force: false })
+      .png({ quality: 30, progressive: true, force: false });
+  }
+  const params = {
+    Bucket: process.env.AWS_BUCKET_NAME,
+    Body: resized,
+    Key: `${foldername}/${Date.now()}_${randomUUID()}`,
+    ContentType: mimetype,
+  };
+
+  req.S3.upload(params, function (err, data) {
+    if (err) {
+      return next(new Error('Something went wrong'));
+    }
+    if (data) {
+      return res.status(200).send(data);
+    }
+  });
 });
 
